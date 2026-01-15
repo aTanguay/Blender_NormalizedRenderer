@@ -1,202 +1,332 @@
-# Scale Render - Blender Addon
+<div align="center">
 
-A Blender addon that renders objects at consistent pixel-per-millimeter scale for product visualization workflows.
+# Scale Render
 
-## Core Concept
+### Pixel-perfect product renders at consistent real-world scale
 
-**10 pixels = 1 millimeter** (configurable)
+[![Blender](https://img.shields.io/badge/Blender-4.0+-orange?logo=blender&logoColor=white)](https://www.blender.org/)
+[![License](https://img.shields.io/badge/license-[LICENSE]-blue.svg)](#license)
+[![Version](https://img.shields.io/badge/version-1.0.0-green.svg)](#version-history)
 
-A 120mm tall cola can renders to 1200px tall. A 600mm tall subwoofer renders to 6000px tall. Every object renders at the same scale, making real-world size directly inferable from image resolution.
+*Perfect for product visualization, e-commerce, catalogs, and technical documentation*
+
+</div>
+
+---
+
+## Table of Contents
+
+- [Why Scale Render?](#why-scale-render)
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Lighting System](#lighting-system)
+- [Output Specifications](#output-specifications)
+- [Best Practices](#best-practices)
+- [Troubleshooting](#troubleshooting)
+- [Technical Specifications](#technical-specifications)
+- [Contributing](#contributing)
+
+---
+
+## Why Scale Render?
+
+**The Problem:** Traditional rendering outputs images with arbitrary resolutions. A small keychain and a large speaker might both render at 1920×1080, making real-world size impossible to infer.
+
+**The Solution:** Scale Render maintains a consistent scale across all objects. By default, **10 pixels = 1 millimeter**.
+
+- 120mm cola can → 1,200px tall
+- 600mm subwoofer → 6,000px tall
+- 60mm watch → 600px tall
+
+Every image conveys real-world size through its resolution.
 
 ## Features
 
-- **Consistent scaling** across all objects
-- **Automatic camera positioning** with hero shot aesthetic (12° downward angle)
-- **Smart lighting system** - automatic three-point lighting that scales with object size
-- **Per-collection override** - use custom lights when needed
-- **Batch rendering** with progress feedback
-- **File management** - overwrite, skip, or auto-number existing files
-- **Transparent PNG output** ready for compositing
+✨ **Consistent Scaling** - Every object renders at the same pixel-per-millimeter ratio
+📷 **Automatic Camera** - Smart positioning with 12° hero shot angle
+💡 **Adaptive Lighting** - Three-point rig that scales with object size
+🎨 **Custom Light Support** - Automatically detects and uses collection lights
+⚡ **Batch Rendering** - Process multiple objects with one click
+📁 **Smart File Management** - Overwrite, skip, or auto-number outputs
+🎯 **Transparent PNGs** - 16-bit RGBA ready for compositing
 
 ## Installation
 
-1. **Download** this addon (as .zip or clone repository)
-2. **In Blender:** Edit > Preferences > Add-ons > Install
-3. **Select** the `scale_render_addon` folder or zip file
-4. **Enable** the "Scale Render" checkbox
+### Method 1: Download Release
+1. Download the latest release from the [Releases page](../../releases)
+2. In Blender: **Edit → Preferences → Add-ons → Install**
+3. Select the downloaded `.zip` file
+4. Enable the **"Scale Render"** checkbox
 
-The addon will appear in the 3D Viewport sidebar (press `N` key).
+### Method 2: Clone Repository
+```bash
+git clone https://github.com/yourusername/Blender_NormalizedRenderer.git
+cd Blender_NormalizedRenderer
+```
+Then follow steps 2-4 above, selecting the `scale_render_addon` folder.
+
+**Access the addon:** Press `N` in the 3D Viewport and select the **"Scale Render"** tab.
 
 ## Quick Start
 
-### Basic Workflow
+### 5-Minute Tutorial
 
-1. **Model your object** at real-world scale in millimeters
-   - Example: A standard soda can is 122mm tall
-   - Set Blender units to millimeters if needed
+**1. Model at Real Scale**
+   - Create or import your object at actual millimeter dimensions
+   - Example: Standard cola can = 122mm tall × 66mm diameter
 
-2. **Create a collection** for your object
-   - Name it with the `RENDER_` prefix (configurable)
-   - Example: `RENDER_Cola_Can`
+**2. Organize in Collections**
+   - Create a collection named `RENDER_YourObject`
+   - Move your object into it (addon finds the largest mesh automatically)
 
-3. **Move object to collection**
-   - The addon will find the largest mesh object in the collection
+**3. Open Scale Render Panel**
+   - Press `N` in 3D Viewport → **"Scale Render"** tab
 
-4. **Open the Scale Render panel**
-   - Press `N` in the 3D Viewport
-   - Select the "Scale Render" tab
+**4. Preview Setup**
+   - Click **"Eval"** to position camera and calculate resolution
+   - Viewport switches to camera view automatically
 
-5. **Click "Eval"** to preview
-   - Camera positions automatically
-   - Resolution updates
-   - Viewport switches to camera view
+**5. Render**
+   - **Single object:** Click **"Render Active"**
+   - **Multiple objects:** Click **"Render All"** (batch mode)
+   - Find outputs in `//renders/` (relative to your .blend file)
 
-6. **Click "Render Active"** to render
-   - Outputs to `//renders/` by default (relative to .blend file)
-   - Filename: `Cola_Can.png` (prefix stripped)
+### Output Example
 
-7. **Multiple objects?** Use **"Render All"**
-   - Batch renders all collections matching the prefix
-   - Shows progress indicator
-   - Continues on errors, reports summary
+```
+Collection:  RENDER_Coffee_Mug
+Object Size: 90mm wide × 100mm tall
+Scale:       10 px/mm
+Padding:     10px per edge
 
-## Settings
+Output:      Coffee_Mug.png
+Resolution:  920 × 1,020 pixels
+```
+
+## Configuration
+
+All settings available in the Scale Render panel:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| **Scale (px/mm)** | Pixels per millimeter in output | 10.0 |
-| **Padding (px)** | Pixels added to each edge | 10 |
-| **Output Folder** | Where to save renders | `//renders/` |
-| **If File Exists** | Overwrite / Skip / Auto-number | Overwrite |
-| **Collection Prefix** | Only render collections starting with | `RENDER_` |
+| **Scale (px/mm)** | Pixels per millimeter in output | `10.0` |
+| **Padding (px)** | Extra pixels added to each edge | `10` |
+| **Output Folder** | Save location (use `//` for relative paths) | `//renders/` |
+| **If File Exists** | Conflict handling: Overwrite / Skip / Auto-number | `Overwrite` |
+| **Collection Prefix** | Only render collections starting with this | `RENDER_` |
 
-## Lighting
+> **Tip:** Use `//` prefix for paths relative to your .blend file location
 
-### Automatic Lighting
+## Lighting System
 
-By default, the addon creates a three-point lighting rig that:
-- Scales automatically based on object size
-- Adjusts intensity to compensate for distance
-- Provides professional product lighting
+### 💡 Automatic Mode (Default)
 
-### Custom Lighting
+The addon creates a professional three-point lighting rig that:
+- ✅ Scales intensity based on object size
+- ✅ Compensates for inverse-square falloff
+- ✅ Positions dynamically relative to object
+- ✅ Provides consistent product lighting
 
-To use your own lights:
-1. Add light objects to the collection
-2. The addon automatically detects them
-3. Default rig is disabled for that object
-4. Full control over lighting setup
+**No setup required** - just render!
 
-## Output
+### 🎨 Custom Mode
 
-- **Format:** PNG with transparency (RGBA, 16-bit)
-- **Resolution:** Exact pixel-per-mm scale + padding
-- **Aspect ratio:** Matches object proportions (not forced to standard ratios)
-- **Naming:** Collection name with prefix stripped
+Want full control? Add your own lights:
+1. Add light objects directly to your render collection
+2. The addon **automatically detects** them
+3. Default rig is **disabled** for that collection
+4. Your custom lighting is used instead
 
-### Example
+**Example:** Add area lights for soft shadows, or a rim light for edge separation.
 
-Collection: `RENDER_Coffee_Mug`
-- Object: 90mm wide × 100mm tall
-- Scale: 10 px/mm
-- Padding: 10px
+---
 
-Output: `Coffee_Mug.png` at 920×1020 pixels
+## Output Specifications
 
-## Validation
+| Property | Value |
+|----------|-------|
+| **Format** | PNG with alpha channel |
+| **Color Depth** | 16-bit RGBA |
+| **Background** | Transparent |
+| **Resolution** | Object size × scale + padding |
+| **Aspect Ratio** | Matches object proportions exactly |
+| **Filename** | Collection name (prefix stripped) |
 
-The addon validates:
-- ✓ Object dimensions (1mm - 10m range)
-- ✓ Output resolution (max 16384px, warns at 8K)
-- ✓ Output path accessibility
-- ✓ Blend file saved (for relative paths)
+## Best Practices
 
-## Tips
+### 🎯 Before You Start
+- ✅ **Save your .blend file** (required for relative paths like `//renders/`)
+- ✅ **Set units to millimeters** (Scene Properties → Units)
+- ✅ **Model at real-world scale** (measure reference objects)
 
-1. **Save your .blend file first** if using relative output paths (`//renders/`)
+### 🚀 Workflow Tips
+- 🔍 **Test with "Eval" first** - Preview framing without rendering
+- 📝 **Name collections clearly** - Collection name becomes the filename
+- ⏩ **Batch efficiently** - Set "If File Exists" to "Skip" to avoid re-renders
+- 💡 **Add custom lights** - Place lights in collections for special treatment
 
-2. **Model at real scale** - measure your reference objects and model accurately
+### ⚠️ Automatic Validation
 
-3. **Use consistent units** - set Blender to millimeters for clarity
-
-4. **Name collections clearly** - the collection name becomes the filename
-
-5. **Test with "Eval" first** - preview framing before rendering
-
-6. **Skip test renders** - set "If File Exists" to "Skip" to avoid re-rendering
-
-7. **Custom lighting** - add lights to collections that need special treatment
+The addon checks for:
+- Object dimensions (1mm - 10m supported)
+- Output resolution (max 16,384px, warns above 8K)
+- Path accessibility and write permissions
+- Blend file saved (for relative paths)
 
 ## Troubleshooting
 
-### "Save .blend file before using relative path"
-- Save your Blender file first, or use an absolute path for output
+<details>
+<summary><b>"Save .blend file before using relative path"</b></summary>
 
-### "No collections found matching prefix"
-- Check collection names start with the prefix (case-sensitive)
-- Or set prefix to empty string to render all collections
+**Solution:** Save your Blender file first, or use an absolute path like `/Users/name/renders/`
+</details>
 
-### "Object too small (< 1mm)"
-- Check your object scale - may need to scale up 1000x
-- Ensure Blender units are set correctly
+<details>
+<summary><b>"No collections found matching prefix"</b></summary>
 
-### Resolution warning "may render slowly"
-- Large objects create large images (e.g., 10m = 100,000px at 10px/mm)
-- Reduce scale factor or add size limits to your workflow
+**Causes:**
+- Collection names don't start with the prefix (case-sensitive)
+- Collections are empty
 
-### Camera clips through object
-- Verify object is at real-world scale
-- Check for extreme depth values
+**Solutions:**
+- Verify collection names start with `RENDER_`
+- Or change prefix in settings (even empty string works)
+</details>
 
-## Technical Details
+<details>
+<summary><b>"Object too small (< 1mm)" or "Object too large (> 10m)"</b></summary>
 
-- **Camera:** 85mm focal length (portrait lens aesthetic)
-- **Sensor:** 36mm full-frame equivalent
-- **Angle:** 12° downward elevation for hero shot feel
-- **Distance:** Calculated per-object for exact framing
-- **Lighting:** Three-point rig with inverse-square compensation
+**Cause:** Object is scaled incorrectly
 
-## File Structure
+**Solutions:**
+- Check object dimensions in Properties → Object
+- May need to scale up/down by 1000× (common when switching units)
+- Verify units are set to millimeters
+</details>
+
+<details>
+<summary><b>Resolution warning "may render slowly"</b></summary>
+
+**Cause:** Large objects create huge images (10m object = 100,000px at 10px/mm)
+
+**Solutions:**
+- Reduce scale factor (try 5px/mm or lower)
+- Split large objects into multiple views
+- Render smaller sections individually
+</details>
+
+<details>
+<summary><b>Camera clips through object</b></summary>
+
+**Solutions:**
+- Verify object is at correct real-world scale
+- Check for extreme depth (very flat/thin objects)
+- Test with "Eval" to preview camera position
+</details>
+
+<details>
+<summary><b>Lighting too bright/dark</b></summary>
+
+**Solutions:**
+- Default rig calibrated for 200mm objects
+- For very small/large objects, add custom lights to collection
+- Adjust World → Surface strength for ambient light
+</details>
+
+---
+
+## Technical Specifications
+
+<details>
+<summary><b>Camera System</b></summary>
+
+- **Focal Length:** 85mm (portrait lens for natural perspective)
+- **Sensor Size:** 36mm (full-frame equivalent)
+- **Elevation Angle:** 12° downward (hero shot aesthetic)
+- **Distance:** Dynamically calculated per object for pixel-perfect framing
+- **FOV Calculation:** Accounts for aspect ratio and perspective projection
+</details>
+
+<details>
+<summary><b>Lighting System</b></summary>
+
+- **Type:** Three-point lighting (key, fill, rim)
+- **Scaling:** Rig scales with object height
+- **Intensity:** Inverse-square law compensation
+- **Calibration:** Reference height of 200mm
+- **Override:** Automatic detection of custom lights per collection
+</details>
+
+<details>
+<summary><b>Render Engine Compatibility</b></summary>
+
+- ✅ **Cycles** (recommended for photorealistic output)
+- ✅ **Eevee** (faster preview renders)
+- ✅ **Workbench** (basic shading)
+
+The addon works with any render engine - lighting and camera setup is engine-agnostic.
+</details>
+
+---
+
+## Project Structure
 
 ```
 scale_render_addon/
-├── __init__.py          # Addon registration
-├── core.py              # Camera math & utilities
+├── __init__.py          # Addon registration & properties
+├── core.py              # Camera math & resolution calculation
 ├── operators.py         # Eval, Render Active, Render All
-├── panel.py             # UI panel
-├── lighting.py          # Light rig system
-├── PLANNING.MD          # Detailed design spec
-├── CLAUDE.MD            # Development guide
+├── panel.py             # UI panel (3D Viewport sidebar)
+├── lighting.py          # Adaptive lighting system
+├── PLANNING.md          # Complete design specification
+├── CLAUDE.md            # Developer documentation
 └── README.md            # This file
 ```
 
-## Documentation
-
-- **PLANNING.MD** - Complete design specification
-- **CLAUDE.MD** - Development guide for contributors
-- **CLEANUP_PLAN.md** - Code quality improvement roadmap
+---
 
 ## Requirements
 
-- **Blender 4.0+** (tested on 4.0)
-- No external dependencies
+- **Blender:** 4.0 or higher
+- **Dependencies:** None (pure Python + Blender API)
+- **Platform:** Windows, macOS, Linux
 
-## Version
-
-**1.0.0** - Initial release
-
-## Author
-
-Andy
-
-## License
-
-[Specify your license here]
+---
 
 ## Contributing
 
-See `CLAUDE.MD` for development guidelines and architecture documentation.
+Contributions welcome! See [CLAUDE.md](scale_render_addon/CLAUDE.md) for:
+- Architecture overview
+- Development workflow
+- Code style guidelines
+- Testing procedures
 
-## Support
+**Found a bug?** Open an [issue](../../issues)
+**Have a feature idea?** Start a [discussion](../../discussions)
 
-For issues and feature requests, see the project repository.
+---
+
+## License
+
+[Specify your license here - e.g., MIT, GPL-3.0, etc.]
+
+---
+
+## Version History
+
+**1.0.0** - Initial Release
+- Core scaling system
+- Automatic camera positioning
+- Adaptive lighting with custom overrides
+- Batch rendering
+- Smart file management
+
+---
+
+## Acknowledgments
+
+Created by **Andy** for consistent product visualization workflows.
+
+Built with the [Blender Python API](https://docs.blender.org/api/current/).
