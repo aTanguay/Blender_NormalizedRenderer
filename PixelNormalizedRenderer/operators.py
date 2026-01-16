@@ -23,13 +23,24 @@ class SCALE_RENDER_OT_eval(Operator):
         return context.scene is not None
     
     def execute(self, context):
+        print("=" * 80)
+        print("DEBUG operators.py: Eval execute() called")
+        print("=" * 80)
         props = context.scene.scale_render_props
+        print(f"DEBUG operators.py: selected_collection = '{props.selected_collection}'")
+        print(f"DEBUG operators.py: last_evaluated_collection = '{props.last_evaluated_collection}'")
 
-        # Get active collection
-        collection = core.get_target_collection(context, props.collection_prefix)
+        # Get selected collection from dropdown
+        if not props.selected_collection:
+            print("DEBUG operators.py: No collection selected!")
+            self.report({'ERROR'}, "No collection selected. Use the Collection Selector dropdown.")
+            return {'CANCELLED'}
+
+        collection = bpy.data.collections.get(props.selected_collection)
+        print(f"DEBUG operators.py: collection object = {collection}")
 
         if collection is None:
-            self.report({'ERROR'}, f"No collections found matching prefix '{props.collection_prefix}'")
+            self.report({'ERROR'}, f"Collection '{props.selected_collection}' not found")
             return {'CANCELLED'}
 
         # Check that collection has mesh objects
@@ -80,14 +91,36 @@ class SCALE_RENDER_OT_eval(Operator):
             props.padding_px
         )
 
+        # Debug output
+        print(f"DEBUG: Collection: {collection.name}")
+        print(f"DEBUG: Width={width:.1f}, Height={height:.1f}, Depth={depth:.1f} mm")
+        print(f"DEBUG: Camera location: {location}")
+        print(f"DEBUG: Camera rotation: {rotation}")
+
         camera.location = location
         camera.rotation_euler = rotation
+
+        # Force update the camera transform
+        camera.update_tag()
+        context.view_layer.update()
 
         # Set camera as active
         context.scene.camera = camera
 
         # Set up lighting (uses collection center)
         lighting_info = lighting.setup_lighting_for_collection(collection)
+
+        # Isolate collection - hide all other RENDER_ collections
+        all_render_collections = core.get_filtered_collections(props.collection_prefix)
+        core.set_collection_visibility(collection, all_render_collections)
+
+        # Store evaluated info for display
+        props.last_evaluated_collection = collection.name
+        props.last_eval_width = width
+        props.last_eval_height = height
+        props.last_eval_depth = depth
+        props.last_eval_res_x = res_x
+        props.last_eval_res_y = res_y
 
         # Update viewport to show camera view
         for area in context.screen.areas:
@@ -98,8 +131,14 @@ class SCALE_RENDER_OT_eval(Operator):
                         break
 
         # Report results
-        self.report({'INFO'},
-            f"Eval: {collection.name} | {width:.1f}×{height:.1f}mm → {res_x}×{res_y}px | {lighting_info}")
+        result_msg = f"Eval: {collection.name} | {width:.1f}×{height:.1f}mm → {res_x}×{res_y}px | {lighting_info}"
+        self.report({'INFO'}, result_msg)
+
+        print("=" * 80)
+        print(f"EVAL COMPLETE: {result_msg}")
+        print(f"Camera final location: {camera.location}")
+        print(f"Camera final rotation: {camera.rotation_euler}")
+        print("=" * 80)
 
         return {'FINISHED'}
 
@@ -124,14 +163,18 @@ class SCALE_RENDER_OT_render_active(Operator):
             self.report({'ERROR'}, msg)
             return {'CANCELLED'}
 
+        # Get selected collection from dropdown
+        if not props.selected_collection:
+            self.report({'ERROR'}, "No collection selected. Use the Collection Selector dropdown.")
+            return {'CANCELLED'}
+
+        collection = bpy.data.collections.get(props.selected_collection)
+        if collection is None:
+            self.report({'ERROR'}, f"Collection '{props.selected_collection}' not found")
+            return {'CANCELLED'}
+
         # First run eval to set everything up
         bpy.ops.scale_render.eval()
-
-        # Get collection name for filename
-        collection = core.get_target_collection(context, props.collection_prefix)
-        if collection is None:
-            self.report({'ERROR'}, "No valid collection found")
-            return {'CANCELLED'}
 
         filename = core.get_output_filename(collection.name, props.collection_prefix)
         filepath = os.path.join(output_dir, filename)

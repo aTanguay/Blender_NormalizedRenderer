@@ -33,9 +33,35 @@ from . import operators
 from . import panel
 
 
+def get_collection_names(prefix: str):
+    """
+    Get list of collection names matching the prefix.
+
+    Returns:
+        List of collection name strings
+    """
+    collections = core.get_filtered_collections(prefix)
+    return [coll.name for coll in collections]
+
+
+def on_collection_prefix_changed(self, context):
+    """
+    Callback when collection prefix changes.
+    Reset selected collection if it no longer matches the prefix.
+    """
+    if self.selected_collection:
+        if not self.selected_collection.startswith(self.collection_prefix):
+            self.selected_collection = ""
+
+    # Force panel redraw
+    for area in context.screen.areas:
+        if area.type == 'VIEW_3D':
+            area.tag_redraw()
+
+
 class ScaleRenderProperties(PropertyGroup):
     """Properties for Scale Render addon"""
-    
+
     scale_factor: FloatProperty(
         name="Scale (px/mm)",
         description="Pixels per millimeter in output image",
@@ -44,7 +70,7 @@ class ScaleRenderProperties(PropertyGroup):
         max=100.0,
         precision=1,
     )
-    
+
     padding_px: IntProperty(
         name="Padding (px)",
         description="Pixels to add on each edge of the output",
@@ -52,18 +78,19 @@ class ScaleRenderProperties(PropertyGroup):
         min=0,
         max=500,
     )
-    
+
     output_folder: StringProperty(
         name="Output Folder",
         description="Directory to save rendered images",
         default="//renders/",
         subtype='DIR_PATH',
     )
-    
+
     collection_prefix: StringProperty(
         name="Collection Prefix",
         description="Only process collections starting with this prefix (leave empty for all)",
         default="RENDER_",
+        update=on_collection_prefix_changed,
     )
 
     overwrite_mode: EnumProperty(
@@ -76,6 +103,27 @@ class ScaleRenderProperties(PropertyGroup):
         ],
         default='OVERWRITE',
     )
+
+    # Using StringProperty instead of dynamic EnumProperty to avoid Blender's
+    # enum caching issues. The panel will display this using a custom UI.
+    selected_collection: StringProperty(
+        name="Active Collection",
+        description="Name of the collection to evaluate and render",
+        default="",
+    )
+
+    # Cache for last evaluated collection (internal use)
+    last_evaluated_collection: StringProperty(
+        name="Last Evaluated Collection",
+        description="Name of the collection that was last evaluated",
+        default="",
+    )
+
+    last_eval_width: FloatProperty(default=0.0)
+    last_eval_height: FloatProperty(default=0.0)
+    last_eval_depth: FloatProperty(default=0.0)
+    last_eval_res_x: IntProperty(default=0)
+    last_eval_res_y: IntProperty(default=0)
 
 
 # Registration

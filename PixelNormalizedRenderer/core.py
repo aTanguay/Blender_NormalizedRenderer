@@ -117,11 +117,8 @@ def calculate_camera_position(
     Uses 85mm focal length with 12° downward angle for hero shot aesthetic.
     Camera positions in front of objects (negative Y), looking toward positive Y.
 
-    The distance calculation ensures the objects fill the frame at the exact
-    pixel-per-mm scale specified, accounting for perspective projection.
-
-    Handles collections with multiple mesh objects by treating them as a
-    single composite object.
+    This function ensures ALL corners of the bounding box are visible in the
+    camera frame, accounting for perspective projection and elevation angle.
 
     Args:
         collection: Blender collection containing objects to frame
@@ -131,56 +128,168 @@ def calculate_camera_position(
     Returns:
         (location, rotation_euler) for camera
     """
-    width, height, depth = get_collection_dimensions(collection)
+    # Get bounding box corners (not just dimensions)
+    min_corner, max_corner, mesh_objects = get_collection_bounds(collection)
+
+    if min_corner is None:
+        # Fallback to origin if no valid objects
+        return Vector((0, -1, 0.5)), (math.radians(78), 0, 0)
+
     center = get_collection_center(collection)
-    
-    # Calculate the frame size we need in world units
-    # Padding in mm = padding_px / scale_factor
+    width, height, depth = get_collection_dimensions(collection)
+
+    print(f"DEBUG core.py: width={width}mm, height={height}mm, depth={depth}mm")
+    print(f"DEBUG core.py: min_corner={min_corner}, max_corner={max_corner}")
+    print(f"DEBUG core.py: center={center}")
+
+    # Calculate padding in Blender Units
+    unit_scale = bpy.context.scene.unit_settings.scale_length
+    meters_per_bu = unit_scale
+    mm_per_meter = 1000.0
     padding_mm = padding_px / scale_factor
-    frame_width = width + (padding_mm * 2)
-    frame_height = height + (padding_mm * 2)
-    
-    # Calculate FOV from focal length
-    # Vertical FOV depends on aspect ratio and sensor fit
-    # We'll calculate distance based on the limiting dimension
-    
-    # Horizontal FOV
-    fov_h = 2 * math.atan(SENSOR_WIDTH / (2 * FOCAL_LENGTH))
-    
+    padding_bu = padding_mm / mm_per_meter / meters_per_bu
+
+    # Calculate FOV from focal length (85mm lens on 36mm sensor)
+    # This is the HALF angle for easier math
+    half_fov_h = math.atan(SENSOR_WIDTH / (2 * FOCAL_LENGTH))
+
     # Calculate aspect ratio of our output
     res_w, res_h = calculate_resolution(width, height, scale_factor, padding_px)
     aspect = res_w / res_h
-    
-    # Vertical FOV based on horizontal FOV and aspect
-    fov_v = 2 * math.atan(math.tan(fov_h / 2) / aspect)
-    
-    # Distance needed to fit width
-    dist_for_width = (frame_width / 2) / math.tan(fov_h / 2)
-    
-    # Distance needed to fit height
-    dist_for_height = (frame_height / 2) / math.tan(fov_v / 2)
-    
-    # Use the larger distance to ensure both dimensions fit
+
+    # Vertical half-FOV based on horizontal FOV and aspect
+    half_fov_v = math.atan(math.tan(half_fov_h) / aspect)
+
+    print(f"DEBUG core.py: half_fov_h={math.degrees(half_fov_h):.2f}°, half_fov_v={math.degrees(half_fov_v):.2f}°")
+    print(f"DEBUG core.py: aspect={aspect:.4f}, res={res_w}x{res_h}")
+
+    # Generate all 8 corners of the bounding box (with padding)
+    bbox_corners = [
+        Vector((min_corner.x - padding_bu, min_corner.y, min_corner.z - padding_bu)),  # front-bottom-left
+        Vector((max_corner.x + padding_bu, min_corner.y, min_corner.z - padding_bu)),  # front-bottom-right
+        Vector((min_corner.x - padding_bu, min_corner.y, max_corner.z + padding_bu)),  # front-top-left
+        Vector((max_corner.x + padding_bu, min_corner.y, max_corner.z + padding_bu)),  # front-top-right
+        Vector((min_corner.x - padding_bu, max_corner.y, min_corner.z - padding_bu)),  # back-bottom-left
+        Vector((max_corner.x + padding_bu, max_corner.y, min_corner.z - padding_bu)),  # back-bottom-right
+        Vector((min_corner.x - padding_bu, max_corner.y, max_corner.z + padding_bu)),  # back-top-left
+        Vector((max_corner.x + padding_bu, max_corner.y, max_corner.z + padding_bu)),  # back-top-right
+    ]
+
+    # We need to find a camera distance such that ALL corners fit in view
+    # The camera is positioned along the -Y axis from the center, elevated by ELEVATION_ANGLE
+    #
+    # For each corner, we need to ensure it's within the frustum.
+    # We'll use an iterative approach: start with an estimate and verify all corners fit.
+
+    # Initial estimate: use the simple perpendicular calculation
+    frame_width_bu = (max_corner.x - min_corner.x) + (padding_bu * 2)
+    frame_height_bu = (max_corner.z - min_corner.z) + (padding_bu * 2)
+
+    dist_for_width = (frame_width_bu / 2) / math.tan(half_fov_h)
+    dist_for_height = (frame_height_bu / 2) / math.tan(half_fov_v)
     camera_distance = max(dist_for_width, dist_for_height)
-    
-    # Add a small buffer for safety
+
+    # Account for object depth - camera needs to see the front face
+    # The front of the object is at min_corner.y, so distance should be from there
+    object_front_y = min_corner.y
+
+    # Iteratively increase distance until all corners fit
+    # We check if each corner projects within the FOV angles
+    max_iterations = 20
+    for iteration in range(max_iterations):
+        # Calculate camera position for this distance
+        # Camera is at center.x, (object_front - distance), (center.z + elevation_offset)
+        cam_x = center.x
+        cam_y = object_front_y - camera_distance
+        cam_z = center.z + (camera_distance * math.tan(ELEVATION_ANGLE))
+
+        cam_location = Vector((cam_x, cam_y, cam_z))
+
+        # Calculate the direction the camera is pointing (toward center)
+        look_direction = (center - cam_location).normalized()
+
+        # Check if all corners are within the frustum
+        all_corners_visible = True
+        max_h_angle = 0
+        max_v_angle = 0
+
+        for corner in bbox_corners:
+            # Vector from camera to this corner
+            to_corner = corner - cam_location
+
+            # Project onto camera's local coordinate system
+            # Camera looks along -Z (which is our look_direction)
+            # Camera's local X is world X (horizontal)
+            # Camera's local Y is perpendicular to look direction in the XZ plane
+
+            # Distance along the look direction
+            forward_dist = to_corner.dot(look_direction)
+
+            if forward_dist <= 0:
+                # Corner is behind the camera - definitely need more distance
+                all_corners_visible = False
+                break
+
+            # Horizontal offset (X axis)
+            horizontal_offset = corner.x - cam_x
+
+            # Vertical offset - need to account for camera tilt
+            # The camera is tilted down by ELEVATION_ANGLE
+            # So "up" in camera space is rotated
+            # Vertical offset in camera space is approximately:
+            vertical_offset = (corner.z - cam_z) * math.cos(ELEVATION_ANGLE) + \
+                              (corner.y - cam_y) * math.sin(ELEVATION_ANGLE)
+
+            # Calculate angles
+            h_angle = abs(math.atan2(horizontal_offset, forward_dist))
+            v_angle = abs(math.atan2(vertical_offset, forward_dist))
+
+            max_h_angle = max(max_h_angle, h_angle)
+            max_v_angle = max(max_v_angle, v_angle)
+
+            # Check if within FOV (with small margin)
+            if h_angle > half_fov_h * 0.98 or v_angle > half_fov_v * 0.98:
+                all_corners_visible = False
+
+        if all_corners_visible:
+            print(f"DEBUG core.py: Iteration {iteration}: All corners visible at distance {camera_distance:.4f}")
+            print(f"DEBUG core.py: max_h_angle={math.degrees(max_h_angle):.2f}° (limit {math.degrees(half_fov_h):.2f}°)")
+            print(f"DEBUG core.py: max_v_angle={math.degrees(max_v_angle):.2f}° (limit {math.degrees(half_fov_v):.2f}°)")
+            break
+        else:
+            # Increase distance by 10%
+            camera_distance *= 1.10
+            print(f"DEBUG core.py: Iteration {iteration}: Increasing distance to {camera_distance:.4f}")
+
+    # Add safety buffer
     camera_distance *= 1.05
-    
-    # Calculate camera position with elevation angle
-    # Camera is in front of object (negative Y), looking toward positive Y
-    # Elevation rotates camera up, so it looks slightly down
-    
+
+    # Final camera position
     cam_x = center.x
-    cam_y = center.y - (camera_distance * math.cos(ELEVATION_ANGLE))
-    cam_z = center.z + (camera_distance * math.sin(ELEVATION_ANGLE))
-    
+    cam_y = object_front_y - camera_distance
+    cam_z = center.z + (camera_distance * math.tan(ELEVATION_ANGLE))
+
     location = Vector((cam_x, cam_y, cam_z))
-    
-    # Camera rotation: point at center
-    # Base rotation is 90° around X to face forward (toward +Y)
-    # Then tilt down by elevation angle
-    rotation = (math.radians(90) - ELEVATION_ANGLE, 0, 0)
-    
+
+    print(f"DEBUG core.py: FINAL camera_distance={camera_distance:.4f}")
+    print(f"DEBUG core.py: ELEVATION_ANGLE={math.degrees(ELEVATION_ANGLE):.2f}°")
+    print(f"DEBUG core.py: location={location}")
+    print(f"DEBUG core.py: actual distance to center={(location - center).length:.4f}")
+
+    # Calculate rotation to point camera at object center
+    # Blender cameras look down their local -Z axis
+    direction = center - location
+    print(f"DEBUG core.py: direction={direction}")
+    direction.normalize()
+    print(f"DEBUG core.py: direction (normalized)={direction}")
+
+    # Create rotation quaternion to point -Z at the target
+    # Use 'Y' as up vector to keep camera upright
+    quat = direction.to_track_quat('-Z', 'Y')
+    rotation = quat.to_euler('XYZ')
+
+    print(f"DEBUG core.py: rotation (deg)=X:{math.degrees(rotation.x):.2f}° Y:{math.degrees(rotation.y):.2f}° Z:{math.degrees(rotation.z):.2f}°")
+
     return location, rotation
 
 
