@@ -215,56 +215,6 @@ def scale_light_rig_for_collection(collection: bpy.types.Collection) -> None:
             light_data.size = 2.0 * scale_factor
 
 
-def scale_light_rig(target_obj: bpy.types.Object) -> None:
-    """
-    Scale the default light rig to match the target object size.
-
-    NOTE: Deprecated in favor of scale_light_rig_for_collection.
-    Kept for backward compatibility.
-
-    Adjusts both position scale and light intensities to compensate for
-    inverse square falloff. Intensity scales with the square of the distance.
-
-    Args:
-        target_obj: Object to scale rig for
-    """
-    rig = get_or_create_light_rig()
-
-    # Get object dimensions
-    width, height, depth = core.get_object_dimensions(target_obj)
-    obj_center = core.get_object_center(target_obj)
-
-    # Calculate scale factor based on object height vs reference
-    scale_factor = height / REFERENCE_HEIGHT
-
-    # Prevent extreme scales
-    scale_factor = max(0.1, min(scale_factor, 20.0))
-
-    # Position rig at object center
-    rig.location = obj_center
-
-    # Scale the rig
-    rig.scale = (scale_factor, scale_factor, scale_factor)
-
-    # Adjust light intensities to compensate for distance (inverse square)
-    intensity_multiplier = scale_factor ** 2
-
-    for child in rig.children:
-        if child.type == 'LIGHT':
-            light_data = child.data
-            base_name = child.name.replace("SCALE_RENDER_", "")
-
-            if "Key" in base_name:
-                light_data.energy = BASE_KEY_ENERGY * intensity_multiplier
-            elif "Fill" in base_name:
-                light_data.energy = BASE_FILL_ENERGY * intensity_multiplier
-            elif "Rim" in base_name:
-                light_data.energy = BASE_RIM_ENERGY * intensity_multiplier
-
-            # Also scale the light size
-            light_data.size = 2.0 * scale_factor
-
-
 def show_light_rig(show=True):
     """
     Show or hide the default light rig.
@@ -310,34 +260,6 @@ def setup_lighting_for_collection(collection: bpy.types.Collection) -> str:
         # Use and scale default rig based on collection dimensions
         show_light_rig(show=True)
         scale_light_rig_for_collection(collection)
-        return "Using scaled default lighting"
-
-
-def setup_lighting_for_object(target_obj: bpy.types.Object, collection: bpy.types.Collection) -> str:
-    """
-    Set up lighting for rendering a specific object.
-
-    NOTE: Deprecated in favor of setup_lighting_for_collection.
-    Kept for backward compatibility.
-
-    Uses collection lights if available, otherwise scales default rig.
-
-    Args:
-        target_obj: Object being rendered
-        collection: Collection containing the object
-
-    Returns:
-        Description of lighting setup for UI feedback
-    """
-    if collection_has_lights(collection):
-        # Use collection's own lights
-        show_light_rig(show=False)
-        light_count = count_collection_lights(collection)
-        return f"Using collection lights ({light_count} found)"
-    else:
-        # Use and scale default rig
-        show_light_rig(show=True)
-        scale_light_rig(target_obj)
         return "Using scaled default lighting"
 
 

@@ -566,41 +566,6 @@ def validate_collection_dimensions(collection: bpy.types.Collection) -> Tuple[bo
     return True, ""
 
 
-def validate_object_dimensions(obj: bpy.types.Object) -> Tuple[bool, str]:
-    """
-    Validate that object has non-zero dimensions and is within reasonable bounds.
-
-    NOTE: Deprecated in favor of validate_collection_dimensions.
-    Use validate_collection_dimensions for multi-mesh products.
-
-    Checks for:
-    - Zero or negative dimensions
-    - Unreasonably small (< 1mm) - likely modeling error
-    - Unreasonably large (> 10m) - may cause render issues
-
-    Args:
-        obj: Blender object to validate
-
-    Returns:
-        (valid, message) tuple - valid is bool, message is error string if invalid
-    """
-    width, height, depth = get_object_dimensions(obj)
-
-    # Check for zero or negative dimensions
-    if width <= 0 or height <= 0 or depth <= 0:
-        return False, f"Object '{obj.name}' has invalid dimensions: {width:.2f}×{height:.2f}×{depth:.2f}mm"
-
-    # Check for unreasonably small objects (< 1mm - likely modeling error)
-    if width < 1 or height < 1:
-        return False, f"Object '{obj.name}' too small (< 1mm): {width:.2f}×{height:.2f}mm"
-
-    # Check for unreasonably large objects (> 10 meters)
-    if width > 10000 or height > 10000 or depth > 10000:
-        return False, f"Object '{obj.name}' too large (> 10m): {width:.1f}×{height:.1f}×{depth:.1f}mm"
-
-    return True, ""
-
-
 def validate_resolution(width_px: int, height_px: int) -> Tuple[bool, str]:
     """
     Validate that resolution is within reasonable bounds.
@@ -655,34 +620,6 @@ def get_or_create_camera(context: bpy.types.Context) -> bpy.types.Object:
     context.scene.collection.objects.link(camera)
 
     return camera
-
-
-def get_target_collection(context: bpy.types.Context, prefix: str) -> Optional[bpy.types.Collection]:
-    """
-    Get the collection to work with - from active object or first matching.
-
-    Tries active object's collection first, then falls back to first
-    collection matching the prefix.
-
-    Args:
-        context: Blender context
-        prefix: Collection prefix filter
-
-    Returns:
-        Collection object or None if not found
-    """
-    # First, try to get collection from active object
-    if context.active_object:
-        for coll in context.active_object.users_collection:
-            if prefix == "" or coll.name.startswith(prefix):
-                return coll
-
-    # Fall back to first matching collection
-    collections = get_filtered_collections(prefix)
-    if collections:
-        return collections[0]
-
-    return None
 
 
 def validate_output_path(output_folder: str) -> Tuple[bool, str, Optional[str]]:
