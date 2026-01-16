@@ -90,44 +90,51 @@ class SCALE_RENDER_PT_main_panel(Panel):
             box.label(text="No collections in scene!", icon='INFO')
     
     def get_active_object_info(self, context, props):
-        """Get info about the currently active/selected object."""
+        """Get info about the currently active/selected collection."""
         if not context.active_object:
             return None
-        
+
         # Find matching collection
         target_collection = None
         for coll in context.active_object.users_collection:
             if props.collection_prefix == "" or coll.name.startswith(props.collection_prefix):
                 target_collection = coll
                 break
-        
+
         if not target_collection:
             return None
-        
-        # Get primary object
+
+        # Check collection has mesh objects
         obj = core.get_primary_object(target_collection)
         if not obj:
             return None
-        
-        # Calculate info
-        width, height, depth = core.get_object_dimensions(obj)
+
+        # Calculate collection info (handles multiple meshes)
+        width, height, depth = core.get_collection_dimensions(target_collection)
         res_x, res_y = core.calculate_resolution(
             width, height,
             props.scale_factor,
             props.padding_px
         )
-        
+
         location, _ = core.calculate_camera_position(
-            obj,
+            target_collection,
             props.scale_factor,
             props.padding_px
         )
-        center = core.get_object_center(obj)
+        center = core.get_collection_center(target_collection)
+
+        if center is None:
+            return None
+
         cam_dist = (location - center).length
-        
+
+        # Get count of mesh objects in collection
+        mesh_count = len([o for o in target_collection.objects if o.type == 'MESH' and not o.name.startswith('_')])
+
         return {
             'collection': target_collection.name,
-            'object': obj.name,
+            'object': f"{mesh_count} mesh{'es' if mesh_count != 1 else ''}",
             'width': width,
             'height': height,
             'depth': depth,

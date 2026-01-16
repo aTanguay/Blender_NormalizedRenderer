@@ -32,21 +32,20 @@ class SCALE_RENDER_OT_eval(Operator):
             self.report({'ERROR'}, f"No collections found matching prefix '{props.collection_prefix}'")
             return {'CANCELLED'}
 
-        # Get primary object
+        # Check that collection has mesh objects
         obj = core.get_primary_object(collection)
-
         if obj is None:
             self.report({'ERROR'}, f"No mesh objects found in collection '{collection.name}'")
             return {'CANCELLED'}
 
-        # Validate object dimensions
-        valid, msg = core.validate_object_dimensions(obj)
+        # Validate collection dimensions (handles multiple meshes)
+        valid, msg = core.validate_collection_dimensions(collection)
         if not valid:
             self.report({'ERROR'}, msg)
             return {'CANCELLED'}
 
-        # Calculate dimensions
-        width, height, depth = core.get_object_dimensions(obj)
+        # Calculate combined dimensions of all meshes in collection
+        width, height, depth = core.get_collection_dimensions(collection)
 
         # Calculate resolution
         res_x, res_y = core.calculate_resolution(
@@ -74,9 +73,9 @@ class SCALE_RENDER_OT_eval(Operator):
         # Get or create camera
         camera = core.get_or_create_camera(context)
 
-        # Position camera
+        # Position camera to frame entire collection
         location, rotation = core.calculate_camera_position(
-            obj,
+            collection,
             props.scale_factor,
             props.padding_px
         )
@@ -87,8 +86,8 @@ class SCALE_RENDER_OT_eval(Operator):
         # Set camera as active
         context.scene.camera = camera
 
-        # Set up lighting
-        lighting_info = lighting.setup_lighting_for_object(obj, collection)
+        # Set up lighting (uses collection center)
+        lighting_info = lighting.setup_lighting_for_collection(collection)
 
         # Update viewport to show camera view
         for area in context.screen.areas:
@@ -215,7 +214,7 @@ class SCALE_RENDER_OT_render_all(Operator):
             print(f"Rendering {i+1}/{len(collections)}: {collection.name}")
 
             try:
-                # Get primary object
+                # Check that collection has mesh objects
                 obj = core.get_primary_object(collection)
 
                 if obj is None:
@@ -223,8 +222,8 @@ class SCALE_RENDER_OT_render_all(Operator):
                     failed += 1
                     continue
 
-                # Validate object dimensions
-                valid, msg = core.validate_object_dimensions(obj)
+                # Validate collection dimensions (handles multiple meshes)
+                valid, msg = core.validate_collection_dimensions(collection)
                 if not valid:
                     errors.append(f"{collection.name}: {msg}")
                     failed += 1
@@ -233,8 +232,8 @@ class SCALE_RENDER_OT_render_all(Operator):
                 # Set visibility - show only this collection
                 core.set_collection_visibility(collection, collections)
 
-                # Calculate dimensions and resolution
-                width, height, depth = core.get_object_dimensions(obj)
+                # Calculate combined dimensions of all meshes
+                width, height, depth = core.get_collection_dimensions(collection)
                 res_x, res_y = core.calculate_resolution(
                     width, height,
                     props.scale_factor,
@@ -252,17 +251,17 @@ class SCALE_RENDER_OT_render_all(Operator):
                 context.scene.render.resolution_x = res_x
                 context.scene.render.resolution_y = res_y
 
-                # Position camera
+                # Position camera to frame entire collection
                 location, rotation = core.calculate_camera_position(
-                    obj,
+                    collection,
                     props.scale_factor,
                     props.padding_px
                 )
                 camera.location = location
                 camera.rotation_euler = rotation
 
-                # Set up lighting
-                lighting.setup_lighting_for_object(obj, collection)
+                # Set up lighting (uses collection center)
+                lighting.setup_lighting_for_collection(collection)
 
                 # Set output path and check overwrite mode
                 filename = core.get_output_filename(collection.name, props.collection_prefix)

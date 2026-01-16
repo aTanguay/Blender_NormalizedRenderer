@@ -107,29 +107,32 @@ def calculate_resolution(
 
 
 def calculate_camera_position(
-    obj: bpy.types.Object,
+    collection: bpy.types.Collection,
     scale_factor: float,
     padding_px: int
 ) -> Tuple[Vector, Tuple[float, float, float]]:
     """
-    Calculate camera position to properly frame the object.
+    Calculate camera position to properly frame all objects in a collection.
 
     Uses 85mm focal length with 12° downward angle for hero shot aesthetic.
-    Camera positions in front of object (negative Y), looking toward positive Y.
+    Camera positions in front of objects (negative Y), looking toward positive Y.
 
-    The distance calculation ensures the object fills the frame at the exact
+    The distance calculation ensures the objects fill the frame at the exact
     pixel-per-mm scale specified, accounting for perspective projection.
 
+    Handles collections with multiple mesh objects by treating them as a
+    single composite object.
+
     Args:
-        obj: Blender object to frame
+        collection: Blender collection containing objects to frame
         scale_factor: Pixels per mm
         padding_px: Pixels to add on each edge
 
     Returns:
         (location, rotation_euler) for camera
     """
-    width, height, depth = get_object_dimensions(obj)
-    center = get_object_center(obj)
+    width, height, depth = get_collection_dimensions(collection)
+    center = get_collection_center(collection)
     
     # Calculate the frame size we need in world units
     # Padding in mm = padding_px / scale_factor
@@ -203,39 +206,141 @@ def get_filtered_collections(prefix: str) -> List[bpy.types.Collection]:
     return collections
 
 
+def get_collection_bounds(collection: bpy.types.Collection) -> Tuple[Vector, Vector, List[bpy.types.Object]]:
+    """
+    Get the combined bounding box of all mesh objects in a collection.
+
+    This treats all meshes in the collection as a single composite object,
+    which is the correct approach when a product is made from multiple parts.
+
+    Args:
+        collection: Collection to analyze
+
+    Returns:
+        (min_corner, max_corner, mesh_objects) tuple
+        - min_corner: Vector of minimum (x, y, z) in world space
+        - max_corner: Vector of maximum (x, y, z) in world space
+        - mesh_objects: List of mesh objects that were included
+    """
+    mesh_objects = []
+    all_corners = []
+
+    for obj in collection.objects:
+        # Only consider mesh objects
+        if obj.type != 'MESH':
+            continue
+
+        # Skip helper objects (prefixed with '_')
+        if obj.name.startswith('_'):
+            continue
+
+        mesh_objects.append(obj)
+
+        # Get world-space bounding box corners for this object
+        bbox_corners = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
+        all_corners.extend(bbox_corners)
+
+    if not all_corners:
+        return None, None, []
+
+    # Find the overall min/max across all objects
+    xs = [v.x for v in all_corners]
+    ys = [v.y for v in all_corners]
+    zs = [v.z for v in all_corners]
+
+    min_corner = Vector((min(xs), min(ys), min(zs)))
+    max_corner = Vector((max(xs), max(ys), max(zs)))
+
+    return min_corner, max_corner, mesh_objects
+
+
+def get_collection_dimensions(collection: bpy.types.Collection) -> Tuple[float, float, float]:
+    """
+    Get combined dimensions of all mesh objects in a collection in millimeters.
+
+    Treats multiple meshes as a single composite object, which is correct
+    for products made from multiple parts.
+
+    Args:
+        collection: Collection to measure
+
+    Returns:
+        (width, height, depth) in millimeters, or (0, 0, 0) if no valid meshes
+    """
+    min_corner, max_corner, mesh_objects = get_collection_bounds(collection)
+
+    if min_corner is None:
+        return 0.0, 0.0, 0.0
+
+    # Calculate dimensions in Blender Units
+    width = max_corner.x - min_corner.x
+    depth = max_corner.y - min_corner.y
+    height = max_corner.z - min_corner.z
+
+    # Convert to millimeters using scene unit scale
+    unit_scale = bpy.context.scene.unit_settings.scale_length
+    meters_per_bu = unit_scale
+    mm_per_meter = 1000.0
+
+    width_mm = width * meters_per_bu * mm_per_meter
+    height_mm = height * meters_per_bu * mm_per_meter
+    depth_mm = depth * meters_per_bu * mm_per_meter
+
+    return width_mm, height_mm, depth_mm
+
+
+def get_collection_center(collection: bpy.types.Collection) -> Optional[Vector]:
+    """
+    Get the center point of all mesh objects in a collection.
+
+    Args:
+        collection: Collection to analyze
+
+    Returns:
+        Center point as Vector, or None if no valid meshes
+    """
+    min_corner, max_corner, mesh_objects = get_collection_bounds(collection)
+
+    if min_corner is None:
+        return None
+
+    center = Vector((
+        (max_corner.x + min_corner.x) / 2,
+        (max_corner.y + min_corner.y) / 2,
+        (max_corner.z + min_corner.z) / 2
+    ))
+
+    return center
+
+
 def get_primary_object(collection: bpy.types.Collection) -> Optional[bpy.types.Object]:
     """
-    Get the primary (largest) mesh object from a collection.
+    Get a representative mesh object from a collection.
 
-    Selects the mesh object with the largest bounding box volume.
-    Skips objects prefixed with '_' (helpers/lights).
+    NOTE: This function is deprecated in favor of using collection-level
+    dimensions (get_collection_dimensions), but is kept for backward compatibility.
+
+    When working with collections that have multiple meshes, you should use
+    the collection-level functions instead.
 
     Args:
         collection: Collection to search
 
     Returns:
-        Largest mesh object or None if no valid objects found
+        First valid mesh object or None if no valid objects found
     """
-    best_obj = None
-    best_volume = 0
-    
     for obj in collection.objects:
         # Only consider mesh objects
         if obj.type != 'MESH':
             continue
-        
+
         # Skip objects that might be light geometry or helpers
         if obj.name.startswith('_'):
             continue
-            
-        width, height, depth = get_object_dimensions(obj)
-        volume = width * height * depth
-        
-        if volume > best_volume:
-            best_volume = volume
-            best_obj = obj
-    
-    return best_obj
+
+        return obj
+
+    return None
 
 
 def get_output_filename(collection_name: str, prefix: str) -> str:
@@ -318,9 +423,46 @@ def restore_collection_visibility(all_collections, original_states):
             coll.hide_render = original_states[coll.name]['hide_render']
 
 
+def validate_collection_dimensions(collection: bpy.types.Collection) -> Tuple[bool, str]:
+    """
+    Validate that collection has non-zero dimensions and is within reasonable bounds.
+
+    Checks combined bounding box of all mesh objects in the collection.
+
+    Checks for:
+    - Zero or negative dimensions
+    - Unreasonably small (< 1mm) - likely modeling error
+    - Unreasonably large (> 10m) - may cause render issues
+
+    Args:
+        collection: Blender collection to validate
+
+    Returns:
+        (valid, message) tuple - valid is bool, message is error string if invalid
+    """
+    width, height, depth = get_collection_dimensions(collection)
+
+    # Check for zero or negative dimensions
+    if width <= 0 or height <= 0 or depth <= 0:
+        return False, f"Collection '{collection.name}' has invalid dimensions: {width:.2f}×{height:.2f}×{depth:.2f}mm"
+
+    # Check for unreasonably small objects (< 1mm - likely modeling error)
+    if width < 1 or height < 1:
+        return False, f"Collection '{collection.name}' too small (< 1mm): {width:.2f}×{height:.2f}mm"
+
+    # Check for unreasonably large objects (> 10 meters)
+    if width > 10000 or height > 10000 or depth > 10000:
+        return False, f"Collection '{collection.name}' too large (> 10m): {width:.1f}×{height:.1f}×{depth:.1f}mm"
+
+    return True, ""
+
+
 def validate_object_dimensions(obj: bpy.types.Object) -> Tuple[bool, str]:
     """
     Validate that object has non-zero dimensions and is within reasonable bounds.
+
+    NOTE: Deprecated in favor of validate_collection_dimensions.
+    Use validate_collection_dimensions for multi-mesh products.
 
     Checks for:
     - Zero or negative dimensions
