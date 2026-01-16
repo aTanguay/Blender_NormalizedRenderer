@@ -18,26 +18,43 @@ MAX_RESOLUTION = 16384  # Maximum output resolution (common GPU texture limit)
 
 def get_object_dimensions(obj: bpy.types.Object) -> Tuple[float, float, float]:
     """
-    Get world-space bounding box dimensions of an object.
+    Get world-space bounding box dimensions of an object in millimeters.
 
     Args:
         obj: Blender object to measure
 
     Returns:
-        (width, height, depth) in Blender units (assumed mm)
+        (width, height, depth) in millimeters, accounting for scene unit scale
     """
     # Get world-space bounding box corners
     bbox_corners = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
-    
+
     xs = [v.x for v in bbox_corners]
     ys = [v.y for v in bbox_corners]
     zs = [v.z for v in bbox_corners]
-    
+
+    # Get dimensions in Blender Units
     width = max(xs) - min(xs)   # X dimension
     depth = max(ys) - min(ys)   # Y dimension (into screen)
     height = max(zs) - min(zs)  # Z dimension (vertical)
-    
-    return width, height, depth
+
+    # Convert to millimeters using scene unit scale
+    # bpy.context.scene.unit_settings.scale_length is the multiplier
+    # If set to 0.001, then 1 BU = 1 meter = 1000mm
+    # If set to 1.0, then 1 BU = 1 meter = 1000mm (default)
+    # If set to 0.01, then 1 BU = 1 cm = 10mm
+    unit_scale = bpy.context.scene.unit_settings.scale_length
+
+    # Blender's default is: 1 BU = 1 meter when scale_length = 1.0
+    # So we need to convert: BU -> meters -> millimeters
+    meters_per_bu = unit_scale
+    mm_per_meter = 1000.0
+
+    width_mm = width * meters_per_bu * mm_per_meter
+    height_mm = height * meters_per_bu * mm_per_meter
+    depth_mm = depth * meters_per_bu * mm_per_meter
+
+    return width_mm, height_mm, depth_mm
 
 
 def get_object_center(obj: bpy.types.Object) -> Vector:
